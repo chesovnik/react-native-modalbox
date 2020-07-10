@@ -34,6 +34,7 @@ const styles = StyleSheet.create({
 
 export default class ModalBox extends React.PureComponent {
   static propTypes = {
+    story: PropTypes.bool,
     isOpen: PropTypes.bool,
     isDisabled: PropTypes.bool,
     startOpen: PropTypes.bool,
@@ -58,19 +59,20 @@ export default class ModalBox extends React.PureComponent {
   };
 
   static defaultProps = {
+    story: false,
     startOpen: false,
     backdropPressToClose: true,
-    swipeToClose: true,
+    swipeToClose: false,
     swipeThreshold: 50,
     position: 'center',
     backdrop: true,
     backdropOpacity: 0.5,
     backdropColor: 'black',
     backdropContent: null,
-    animationDuration: 400,
+    animationDuration: 700,
     backButtonClose: false,
     easing: Easing.elastic(0.8),
-    coverScreen: false,
+    coverScreen: true,
     keyboardTopOffset: Platform.OS == 'ios' ? 22 : 0,
     useNativeDriver: true
   };
@@ -100,7 +102,7 @@ export default class ModalBox extends React.PureComponent {
     const position = props.startOpen
       ? new Animated.Value(0)
       : new Animated.Value(
-          props.entry === 'top' ? -SCREEN_HEIGHT : SCREEN_HEIGHT
+          props.story ? -SCREEN_HEIGHT : SCREEN_HEIGHT
         );
     this.state = {
       position,
@@ -128,6 +130,7 @@ export default class ModalBox extends React.PureComponent {
   }
 
   componentDidMount() {
+    this.state.position.addListener(({ value }) => { this.positionValue = value; });
     this.handleOpenning();
   }
 
@@ -139,6 +142,7 @@ export default class ModalBox extends React.PureComponent {
 
   componentWillUnmount() {
     if (this.subscriptions) this.subscriptions.forEach(sub => sub.remove());
+    this.state.position.removeAllListeners();
     if (this.props.backButtonClose && Platform.OS === 'android')
       BackHandler.removeEventListener('hardwareBackPress', this.onBackPress);
   }
@@ -310,15 +314,15 @@ export default class ModalBox extends React.PureComponent {
           easing: this.props.easing,
           useNativeDriver: this.props.useNativeDriver
         }).start(() => {
+          if (this.props.onClosed) this.props.onClosed();
           // Keyboard.dismiss();   // make this optional. Easily user defined in .onClosed() callback
           this.setState({
             isAnimateClose: false,
             animClose
           }, () => {
             /* Set the state to the starting position of the modal, preventing from animating where the swipe stopped */
-            this.state.position.setValue(this.props.entry === 'top' ? -this.state.containerHeight : this.state.containerHeight);
+            this.state.position.setValue(this.props.story ? -this.state.containerHeight : this.state.containerHeight);
           });
-          if (this.props.onClosed) this.props.onClosed();
         });
       }
     );
@@ -388,16 +392,20 @@ export default class ModalBox extends React.PureComponent {
           : state.dy > this.props.swipeThreshold
       ) {
         this.close();
-      } else if (!this.state.isOpen) {
+      } else if (this.props.story) {
         this.animateOpen();
       }
     };
 
     return PanResponder.create({
-      onStartShouldSetPanResponder: onPanStart,
       onPanResponderMove: onPanMove,
       onPanResponderRelease: onPanRelease,
-      onPanResponderTerminate: onPanRelease
+      onPanResponderTerminate: onPanRelease,
+      onMoveShouldSetResponderCapture: () => true,
+      onStartShouldSetPanResponder: onPanStart,
+      onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
+        return (Math.abs(gestureState.dy) > 25 || !this.props.story) && onPanStart(evt, gestureState);                  
+      }
     });
   }
 
@@ -482,6 +490,19 @@ export default class ModalBox extends React.PureComponent {
       width: this.state.containerWidth
     };
     const offsetX = (this.state.containerWidth - this.state.width) / 2;
+    const positionValue = this.state.position.__getValue();
+    const interpolationObj =
+      positionValue >= 0
+        ? {
+            inputRange: [0, SCREEN_HEIGHT / 2],
+            outputRange: [1, 0],
+            extrapolate: "clamp",
+          }
+        : {
+            inputRange: [-SCREEN_HEIGHT / 2, 0],
+            outputRange: [0, 1],
+            extrapolate: "clamp",
+          };
 
     return (
       <Animated.View
@@ -493,9 +514,12 @@ export default class ModalBox extends React.PureComponent {
           {
             transform: [
               {translateY: this.state.position},
-              {translateX: offsetX}
-            ]
-          }
+              {translateX: offsetX},
+              {scale: this.props.story ? this.state.position.interpolate(interpolationObj) : 1}
+            ],
+            opacity: this.props.animateOpacity && this.props.story ? this.state.position.interpolate(interpolationObj) : 1,
+            backgroundColor: 'transparent'
+          },
         ]}
         {...this.state.pan.panHandlers}>
         {this.props.children}
@@ -540,7 +564,6 @@ export default class ModalBox extends React.PureComponent {
           }
         }}
         supportedOrientations={[
-          'landscape',
           'portrait',
           'portrait-upside-down'
         ]}
