@@ -404,7 +404,7 @@ export default class ModalBox extends React.PureComponent {
       onMoveShouldSetResponderCapture: () => true,
       onStartShouldSetPanResponder: onPanStart,
       onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
-        return (Math.abs(gestureState.dy) > 25 || !this.props.story) && onPanStart(evt, gestureState);                  
+        return Math.abs(gestureState.dy) > 25 && onPanStart(evt, gestureState);                  
       }
     });
   }
